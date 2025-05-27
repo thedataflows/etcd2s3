@@ -25,7 +25,7 @@ builds:
     ldflags:
       - -s
       - -w
-      - -X=main.version={{.Tag}}
+      - -X=main.version={{.Tag}}_{{.ShortCommit}}
 checksum:
   name_template: "sha256sums.txt"
   algorithm: sha256
