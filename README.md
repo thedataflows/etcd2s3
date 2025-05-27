@@ -21,15 +21,8 @@ All configuration is done via CLI flags, environment variables, and optional `.e
 
 1. CLI flags
 2. Environment variables
-3. If present in the working directory, `.env, .env.local, .env.development` file values
+3. If present in the working directory, `.env, .env.local, .env.development` file values (order from left to right, first found is used)
 4. Default values
-
-#### .env File Support
-
-- **Optional**: Place a `.env` file in the working directory
-- **Automatic Loading**: The `.env` file is automatically loaded if present
-- **Silent Failure**: If the `.env` file exists but can't be read, a warning is shown but execution continues
-- **Example**: Copy `.env.example` to `.env` and customize your values
 
 #### Environment Variables
 
