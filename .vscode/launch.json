@@ -13,12 +13,15 @@
       "args": [
         "list",
         "--etcd-endpoints", "http://localhost:2379",
-        "--etcd-snapshot-dir", "./testdata/snapshots",
+        // "--etcd-snapshot-dir", "./testdata/snapshots",
         "--aws-bucket", "etcd-snapshots-test",
-        "--aws-endpoint", "http://localhost:9000",
+        "--aws-endpoint-url", "http://localhost:9000",
         "--aws-access-key-id", "minioadmin",
         "--aws-secret-access-key", "minioadmin"
-      ]
+      ],
+      "env": {
+        "ETCD_SNAPSHOT_DIR":"./testadata/snapshots"
+      },
     }
   ]
 }
