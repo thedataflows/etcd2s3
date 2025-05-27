@@ -6,6 +6,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
+	"github.com/joho/godotenv"
 	"github.com/thedataflows/etcd2s3/pkg/appconfig"
 	log "github.com/thedataflows/go-lib-log"
 )
@@ -45,6 +46,13 @@ func (cli *CLI) AfterApply(ctx *kong.Context) error {
 
 // Run executes the CLI with the given version
 func Run(version string, args []string) error {
+	// Optionally load .env file if it exists
+	_ = godotenv.Load(
+		".env",             // Current directory
+		".env.local",       // Local overrides (common in web development)
+		".env.development", // Development environment
+	)
+
 	var cli CLI
 
 	parser, err := kong.New(&cli,

@@ -7,6 +7,7 @@ require (
 	github.com/alecthomas/kong-yaml v0.2.0
 	github.com/dsnet/compress v0.0.1
 	github.com/goccy/go-yaml v1.17.1
+	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/compress v1.18.0
 	github.com/peak/s5cmd/v2 v2.3.0
 	github.com/pierrec/lz4/v4 v4.1.22

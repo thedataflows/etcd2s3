@@ -5,3 +5,5 @@
 /testdata/etcd*
 /testdata/minio
 /testdata/snapshots
+.env
+.env.local
