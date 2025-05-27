@@ -196,44 +196,129 @@ func (m *Manager) determineSnapshotsToKeep(snapshots []SnapshotFile) map[string]
 	toKeep := make(map[string]bool)
 	now := time.Now()
 
+	log.Infof(PKG_RETENTION, "Evaluating retention for %d snapshots", len(snapshots))
+	log.Infof(PKG_RETENTION, "Retention policy: KeepLast=%d, KeepLastDays=%d, KeepLastHours=%d, KeepLastWeeks=%d, KeepLastMonths=%d, KeepLastYears=%d",
+		m.policy.KeepLast, m.policy.KeepLastDays, m.policy.KeepLastHours, m.policy.KeepLastWeeks, m.policy.KeepLastMonths, m.policy.KeepLastYears)
+
 	// Sort snapshots by modification time (newest first)
 	sort.Slice(snapshots, func(i, j int) bool {
 		return snapshots[i].ModTime.After(snapshots[j].ModTime)
 	})
 
-	// Keep last N snapshots
+	// Count active policies to determine if we use union or intersection logic
+	activePolicies := 0
 	if m.policy.KeepLast > 0 {
+		activePolicies++
+	}
+	if m.policy.KeepLastHours > 0 {
+		activePolicies++
+	}
+	if m.policy.KeepLastDays > 0 {
+		activePolicies++
+	}
+	if m.policy.KeepLastWeeks > 0 {
+		activePolicies++
+	}
+	if m.policy.KeepLastMonths > 0 {
+		activePolicies++
+	}
+	if m.policy.KeepLastYears > 0 {
+		activePolicies++
+	}
+
+	// If multiple policies are active, use intersection logic (stricter)
+	// If only one policy is active, use the single policy
+	useIntersection := activePolicies > 1
+
+	log.Infof(PKG_RETENTION, "Active policies: %d, using %s logic", activePolicies,
+		func() string {
+			if useIntersection {
+				return "intersection (AND)"
+			} else {
+				return "union (OR)"
+			}
+		}())
+
+	// Initialize all snapshots as candidates for intersection logic
+	candidates := make(map[string]int) // Track how many policies each snapshot satisfies
+	if useIntersection {
+		for _, snapshot := range snapshots {
+			candidates[snapshot.Name] = 0
+		}
+	}
+
+	// Apply count-based retention (KeepLast)
+	if m.policy.KeepLast > 0 {
+		log.Infof(PKG_RETENTION, "Applying KeepLast policy: keeping %d newest snapshots", m.policy.KeepLast)
 		for i, snapshot := range snapshots {
 			if i < m.policy.KeepLast {
-				toKeep[snapshot.Name] = true
+				if useIntersection {
+					candidates[snapshot.Name]++
+				} else {
+					toKeep[snapshot.Name] = true
+				}
+				log.Debugf(PKG_RETENTION, "Snapshot %s: kept by KeepLast policy (rank %d)", snapshot.Name, i+1)
 			}
 		}
 	}
 
-	// Keep snapshots within time periods
+	// Apply time-based retention policies
 	for _, snapshot := range snapshots {
 		age := now.Sub(snapshot.ModTime)
+		policyMatches := 0
+		var matchedPolicies []string
 
 		if m.policy.KeepLastHours > 0 && age <= time.Duration(m.policy.KeepLastHours)*time.Hour {
-			toKeep[snapshot.Name] = true
+			policyMatches++
+			matchedPolicies = append(matchedPolicies, "KeepLastHours")
 		}
 
 		if m.policy.KeepLastDays > 0 && age <= time.Duration(m.policy.KeepLastDays)*24*time.Hour {
-			toKeep[snapshot.Name] = true
+			policyMatches++
+			matchedPolicies = append(matchedPolicies, "KeepLastDays")
 		}
 
 		if m.policy.KeepLastWeeks > 0 && age <= time.Duration(m.policy.KeepLastWeeks)*7*24*time.Hour {
-			toKeep[snapshot.Name] = true
+			policyMatches++
+			matchedPolicies = append(matchedPolicies, "KeepLastWeeks")
 		}
 
 		if m.policy.KeepLastMonths > 0 && age <= time.Duration(m.policy.KeepLastMonths)*30*24*time.Hour {
-			toKeep[snapshot.Name] = true
+			policyMatches++
+			matchedPolicies = append(matchedPolicies, "KeepLastMonths")
 		}
 
 		if m.policy.KeepLastYears > 0 && age <= time.Duration(m.policy.KeepLastYears)*365*24*time.Hour {
+			policyMatches++
+			matchedPolicies = append(matchedPolicies, "KeepLastYears")
+		}
+
+		if len(matchedPolicies) > 0 {
+			log.Debugf(PKG_RETENTION, "Snapshot %s (age: %v): matched time policies: %v",
+				snapshot.Name, age.Truncate(time.Minute), matchedPolicies)
+		}
+
+		if useIntersection {
+			candidates[snapshot.Name] += policyMatches
+		} else if policyMatches > 0 {
 			toKeep[snapshot.Name] = true
 		}
 	}
+
+	// For intersection logic, only keep snapshots that satisfy ALL active policies
+	if useIntersection {
+		for snapshotName, matches := range candidates {
+			if matches == activePolicies {
+				toKeep[snapshotName] = true
+				log.Debugf(PKG_RETENTION, "Snapshot %s: kept (satisfies all %d policies)", snapshotName, activePolicies)
+			} else {
+				log.Debugf(PKG_RETENTION, "Snapshot %s: will be deleted (satisfies only %d/%d policies)", snapshotName, matches, activePolicies)
+			}
+		}
+	}
+
+	log.Infof(PKG_RETENTION, "Retention evaluation complete: %d snapshots to keep, %d to delete",
+		len(toKeep), len(snapshots)-len(toKeep))
 
 	return toKeep
 }
