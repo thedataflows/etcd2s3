@@ -1,0 +1,33 @@
+version: 2
+project_name: etcd2s3
+archives:
+  - strip_binary_directory: true
+    format_overrides:
+      - goos: windows
+        formats: zip
+    files:
+      - README.md
+    name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+builds:
+  - id: default
+    env: &env
+      - CGO_ENABLED=0
+    goos: &goos
+      - linux
+      # - darwin
+      - windows
+    goarch: &goarch
+      - amd64
+      # - arm64
+    flags: &flags
+      - -mod=readonly
+      - -trimpath
+    ldflags:
+      - -s
+      - -w
+      - -X=main.version={{.Tag}}
+checksum:
+  name_template: "sha256sums.txt"
+  algorithm: sha256
+snapshot:
+  version_template: "{{ .Version }}-next"

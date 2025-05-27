@@ -1,0 +1,7 @@
+.vscode/settings.json
+/bin/
+/etcd2s3*
+/dist/
+/testdata/etcd*
+/testdata/minio
+/testdata/snapshots

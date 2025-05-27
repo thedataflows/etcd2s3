@@ -1,0 +1,83 @@
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.6.0
+    container_name: etcd-dev
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    environment:
+      - ETCD_NAME=etcd-dev
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER=etcd-dev=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster-dev
+      - ETCD_INITIAL_CLUSTER_STATE=new
+    volumes:
+      - etcd-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://etcd:2379", "endpoint", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: minio-dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment: &minio_env
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: minio-init-dev
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment: *minio_env
+    volumes:
+      - ./docker-init-minio.sh:/docker-init-minio.sh:ro
+    entrypoint: ["/bin/sh", "/docker-init-minio.sh"]
+    restart: "no"
+
+  etcd2s3:
+    build: .
+    container_name: etcd2s3-dev
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    volumes:
+      - snapshots:/data/snapshots
+    environment:
+      - LOG_LEVEL=debug
+      - ETCD_ENDPOINTS=http://etcd:2379
+      - ETCD_SNAPSHOT_DIR=/data/snapshots
+      - AWS_BUCKET=etcd-snapshots
+      - AWS_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
+    entrypoint: ["etcd2s3"]
+    command: ["snapshot"]
+
+volumes:
+  etcd-data:
+  minio-data:
+  snapshots:

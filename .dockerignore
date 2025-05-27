@@ -1,0 +1,33 @@
+# Documentation
+README.md
+*.md
+
+# Build artifacts
+/bin/
+/dist/
+/etcd2s3*
+
+# Development data
+/testdata/etcd*
+/testdata/minio
+/testdata/snapshots
+
+# IDE
+.vscode/
+.idea/
+
+# Mise
+.mise.toml
+mise.toml
+
+# GitHub
+.github/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log

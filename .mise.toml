@@ -1,0 +1,577 @@
+# Mise tasks configuration for etcd2s3 development
+
+# Global environment variables for consistent configuration
+[env]
+# Base directories
+TESTDATA_DIR = "./testdata"
+ETCD_DATA_DIR = "./testdata/etcd"
+MINIO_DATA_DIR = "./testdata/minio"
+SNAPSHOTS_DIR = "./testdata/snapshots"
+
+# Service endpoints
+ETCD_CLIENT_URL = "http://localhost:2379"
+ETCD_PEER_URL = "http://localhost:2380"
+MINIO_API_URL = "http://localhost:9000"
+MINIO_CONSOLE_URL = "http://localhost:9001"
+
+# etcd configuration
+ETCD_NAME = "etcd-dev"
+ETCD_CLUSTER_TOKEN = "etcd-cluster-dev"
+
+# MinIO configuration
+MINIO_ROOT_USER = "minioadmin"
+MINIO_ROOT_PASSWORD = "minioadmin"
+MINIO_BUCKET = "etcd-snapshots-test"
+
+# Test snapshot name
+TEST_SNAPSHOT_NAME = "test-restore-snapshot"
+
+[tasks.etcd-start]
+description = "Start local etcd instance for testing"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# Ensure testdata directory exists
+mkdir -p "${ETCD_DATA_DIR}"
+
+# Start etcd with minimal configuration
+exec etcd \
+  --listen-client-urls "${ETCD_CLIENT_URL}" \
+  --advertise-client-urls "${ETCD_CLIENT_URL}" \
+  --listen-peer-urls "${ETCD_PEER_URL}" \
+  --initial-advertise-peer-urls "${ETCD_PEER_URL}" \
+  --initial-cluster "${ETCD_NAME}=${ETCD_PEER_URL}" \
+  --initial-cluster-token "${ETCD_CLUSTER_TOKEN}" \
+  --initial-cluster-state new \
+  --log-level info
+"""
+
+[tasks.minio-start]
+description = "Start local MinIO instance for testing"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# Ensure testdata directory exists
+mkdir -p "${MINIO_DATA_DIR}"
+
+# Start MinIO server
+exec minio server "${MINIO_DATA_DIR}" \
+  --address :9000 \
+  --console-address :9001
+"""
+
+[tasks.dev-start]
+description = "Start both etcd and minio for development"
+depends = ["etcd-start", "minio-start"]
+
+[tasks.etcd-stop]
+description = "Stop etcd process"
+run = """
+#!/bin/bash
+pkill -f "etcd.*${ETCD_NAME}" || echo "etcd not running"
+"""
+
+[tasks.minio-stop]
+description = "Stop minio process"
+run = """
+#!/bin/bash
+pkill -f "minio server" || echo "minio not running"
+"""
+
+[tasks.dev-stop]
+description = "Stop both etcd and minio"
+depends = ["etcd-stop", "minio-stop"]
+
+[tasks.dev-clean]
+description = "Clean all test data"
+depends = ["dev-stop"]
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# Stop services first
+mise run dev-stop
+
+# Clean data directories
+rm -rf "${ETCD_DATA_DIR}"*
+rm -rf "${MINIO_DATA_DIR}"/
+rm -rf "${SNAPSHOTS_DIR}"/
+
+echo "Test data cleaned"
+"""
+
+[tasks.test-setup]
+description = "Setup MinIO bucket for testing"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# Wait for MinIO to be ready
+echo "Waiting for MinIO to be ready..."
+until curl -s "${MINIO_API_URL}/minio/health/ready"; do
+  sleep 1
+done
+
+# Configure mc alias
+mc alias set local "${MINIO_API_URL}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
+
+# Create bucket
+mc mb "local/${MINIO_BUCKET}" || echo "Bucket already exists"
+
+echo "MinIO setup complete"
+echo "Access MinIO console at: ${MINIO_CONSOLE_URL}"
+echo "Username: ${MINIO_ROOT_USER}"
+echo "Password: ${MINIO_ROOT_PASSWORD}"
+"""
+
+[tasks.test-snapshot]
+description = "Test creating a snapshot with current config"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# Check if etcd is running
+if ! curl -s "${ETCD_CLIENT_URL}/health"; then
+  echo "etcd is not running. Start it with: mise run etcd-start"
+  exit 1
+fi
+
+# Check if minio is running
+if ! curl -s "${MINIO_API_URL}/minio/health/ready"; then
+  echo "MinIO is not running. Start it with: mise run minio-start"
+  exit 1
+fi
+
+# Run snapshot command
+echo "Creating test snapshot..."
+go run . snapshot \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}"
+"""
+
+[tasks.test-list]
+description = "Test listing snapshots"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# Check if etcd is running
+if ! curl -s "${ETCD_CLIENT_URL}/health"; then
+  echo "etcd is not running. Start it with: mise run etcd-start"
+  exit 1
+fi
+
+# Check if minio is running
+if ! curl -s "${MINIO_API_URL}/minio/health/ready"; then
+  echo "MinIO is not running. Start it with: mise run minio-start"
+  exit 1
+fi
+
+# List snapshots
+echo "Listing all snapshots..."
+go run . list \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}"
+"""
+
+[tasks.test-populate-etcd]
+description = "Add some test data to etcd"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# Check if etcd is running
+if ! curl -s "${ETCD_CLIENT_URL}/health"; then
+  echo "etcd is not running. Start it with: mise run etcd-start"
+  exit 1
+fi
+
+echo "Adding test data to etcd..."
+
+# Add some test key-value pairs
+etcdctl put /test/key1 "value1"
+etcdctl put /test/key2 "value2"
+etcdctl put /app/config/database "postgresql://localhost:5432/mydb"
+etcdctl put /app/config/redis "redis://localhost:6379"
+
+echo "Test data added to etcd:"
+etcdctl get --prefix /
+"""
+
+[tasks.test-full-workflow]
+description = "Run a complete test workflow"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+echo "=== Starting Full Test Workflow ==="
+
+# Check if services are running
+if ! curl -s "${ETCD_CLIENT_URL}/health"; then
+  echo "etcd is not running. Start it with: mise run etcd-start"
+  exit 1
+fi
+
+if ! curl -s "${MINIO_API_URL}/minio/health/ready"; then
+  echo "MinIO is not running. Start it with: mise run minio-start"
+  exit 1
+fi
+
+echo "1. Adding test data to etcd..."
+mise run test-populate-etcd
+
+echo -e "\n2. Creating snapshot..."
+go run . snapshot \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}"
+
+echo -e "\n3. Listing all snapshots..."
+go run . list \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}"
+
+echo -e "\n4. Listing only local snapshots..."
+go run . list --local \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}"
+
+echo -e "\n5. Listing only S3 snapshots..."
+go run . list --remote \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}"
+
+echo -e "\n=== Test Workflow Complete ==="
+"""
+
+[tasks.logs-etcd]
+description = "Show etcd logs (if running in background)"
+run = """
+#!/bin/bash
+if pgrep -f "etcd.*${ETCD_NAME}" > /dev/null; then
+  echo "etcd is running with PID: $(pgrep -f 'etcd.*${ETCD_NAME}')"
+  echo "Data directory contents:"
+  ls -la "${ETCD_DATA_DIR}"/
+else
+  echo "etcd is not running"
+fi
+"""
+
+[tasks.logs-minio]
+description = "Show MinIO status and logs"
+run = """
+#!/bin/bash
+if pgrep -f "minio server" > /dev/null; then
+  echo "MinIO is running with PID: $(pgrep -f 'minio server')"
+  echo "MinIO data directory contents:"
+  ls -la "${MINIO_DATA_DIR}"/
+  echo "Available buckets:"
+  ls -la "${MINIO_DATA_DIR}"/
+else
+  echo "MinIO is not running"
+fi
+"""
+
+[tasks.dev-status]
+description = "Show status of all development services"
+run = """
+#!/bin/bash
+echo "=== Development Environment Status ==="
+
+echo -n "etcd: "
+if curl -s "${ETCD_CLIENT_URL}/health" > /dev/null; then
+  echo "✅ Running (${ETCD_CLIENT_URL})"
+else
+  echo "❌ Not running"
+fi
+
+echo -n "MinIO API: "
+if curl -s "${MINIO_API_URL}/minio/health/ready" > /dev/null; then
+  echo "✅ Running (${MINIO_API_URL})"
+else
+  echo "❌ Not running"
+fi
+
+echo -n "MinIO Console: "
+if curl -s "${MINIO_CONSOLE_URL}" > /dev/null; then
+  echo "✅ Running (${MINIO_CONSOLE_URL})"
+else
+  echo "❌ Not running"
+fi
+
+echo -e "\nSnapshot counts:"
+echo "Local snapshots: $(ls -1 "${SNAPSHOTS_DIR}"/*.db 2>/dev/null | wc -l)"
+echo "S3 objects: $(find "${MINIO_DATA_DIR}" -name "*.db" 2>/dev/null | wc -l)"
+
+echo -e "\nData directory sizes:"
+echo "etcd data: $(du -sh "${ETCD_DATA_DIR}" 2>/dev/null || echo '0B')"
+echo "MinIO data: $(du -sh "${MINIO_DATA_DIR}" 2>/dev/null || echo '0B')"
+echo "Local snapshots: $(du -sh "${SNAPSHOTS_DIR}" 2>/dev/null || echo '0B')"
+"""
+
+[tasks.test-restore-local]
+description = "Test restoring from a local snapshot"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+echo "=== Testing Local Restore ==="
+
+# Check if test snapshot exists
+if [ ! -f "${SNAPSHOTS_DIR}/${TEST_SNAPSHOT_NAME}.db" ]; then
+  echo "Test snapshot not found. Creating one first..."
+  mise run test-create-restore-snapshot
+fi
+
+# Stop etcd if running
+echo "Stopping etcd..."
+mise run etcd-stop
+sleep 2
+
+# Clean etcd data directory
+echo "Cleaning etcd data directory..."
+rm -rf "${ETCD_DATA_DIR}"/*
+
+# Define restore directory
+RESTORE_DIR="${ETCD_DATA_DIR}-restore"
+
+# Restore from local snapshot
+echo "Restoring from local snapshot..."
+go run . restore "${SNAPSHOTS_DIR}/${TEST_SNAPSHOT_NAME}.db" \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}" \
+  --data-dir "${RESTORE_DIR}"
+
+# Start etcd with restored data
+echo "Starting etcd with restored data..."
+etcd \
+  --listen-client-urls "${ETCD_CLIENT_URL}" \
+  --advertise-client-urls "${ETCD_CLIENT_URL}" \
+  --listen-peer-urls "${ETCD_PEER_URL}" \
+  --initial-advertise-peer-urls "${ETCD_PEER_URL}" \
+  --initial-cluster "${ETCD_NAME}=${ETCD_PEER_URL}" \
+  --initial-cluster-token "${ETCD_CLUSTER_TOKEN}" \
+  --initial-cluster-state new \
+  --log-level info &
+
+# Wait for etcd to be ready
+echo "Waiting for etcd to be ready..."
+until curl -s "${ETCD_CLIENT_URL}/health" > /dev/null; do
+  sleep 1
+done
+
+# Verify restored data
+echo "Verifying restored data:"
+etcdctl get --prefix /
+
+pkill -f "etcd.*${ETCD_NAME}" || echo "etcd not running"
+
+[[ ! -d "${RESTORE_DIR}" ]] || rm -fr "${RESTORE_DIR}"
+
+echo "Local restore test complete!"
+"""
+
+[tasks.test-restore-s3]
+description = "Test restoring from an S3 snapshot"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+echo "=== Testing S3 Restore ==="
+
+# Check if services are running
+echo "Checking if MinIO is running..."
+if ! curl -s "${MINIO_API_URL}/minio/health/ready" > /dev/null; then
+  echo "MinIO is not running. Start it with: mise run minio-start"
+  exit 1
+fi
+
+# Ensure S3 snapshot exists
+echo "Checking S3 snapshots..."
+mc alias set local "${MINIO_API_URL}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
+if ! mc ls "local/${MINIO_BUCKET}/" | grep -q "${TEST_SNAPSHOT_NAME}.db"; then
+  echo "S3 snapshot not found. Creating one first..."
+  mise run test-create-restore-snapshot
+  mise run test-snapshot
+fi
+
+# Stop etcd if running
+echo "Stopping etcd..."
+mise run etcd-stop
+sleep 2
+
+# Clean etcd data directory
+echo "Cleaning etcd data directory..."
+rm -rf "${ETCD_DATA_DIR}"/*
+
+# Define restore directory
+RESTORE_DIR="${ETCD_DATA_DIR}-restore-s3"
+
+# Restore from S3 snapshot
+echo "Restoring from S3 snapshot..."
+go run . restore "s3://${MINIO_BUCKET}/${TEST_SNAPSHOT_NAME}.db" \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}" \
+  --data-dir "${RESTORE_DIR}"
+
+# Start etcd with restored data
+echo "Starting etcd with restored data..."
+etcd \
+  --listen-client-urls "${ETCD_CLIENT_URL}" \
+  --advertise-client-urls "${ETCD_CLIENT_URL}" \
+  --listen-peer-urls "${ETCD_PEER_URL}" \
+  --initial-advertise-peer-urls "${ETCD_PEER_URL}" \
+  --initial-cluster "${ETCD_NAME}=${ETCD_PEER_URL}" \
+  --initial-cluster-token "${ETCD_CLUSTER_TOKEN}" \
+  --initial-cluster-state new \
+  --log-level info &
+
+# Wait for etcd to be ready
+echo "Waiting for etcd to be ready..."
+until curl -s "${ETCD_CLIENT_URL}/health" > /dev/null; do
+  sleep 1
+done
+
+# Verify restored data
+echo "Verifying restored data:"
+etcdctl get --prefix /
+
+pkill -f "etcd.*${ETCD_NAME}" || echo "etcd not running"
+
+[[ ! -d "${RESTORE_DIR}" ]] || rm -fr "${RESTORE_DIR}"
+
+echo "S3 restore test complete!"
+"""
+
+[tasks.test-create-restore-snapshot]
+description = "Create a test snapshot with known data for restore testing"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+echo "=== Creating Test Restore Snapshot ==="
+
+# Check if etcd is running
+echo "Checking if etcd is running..."
+if ! curl -s "${ETCD_CLIENT_URL}/health" > /dev/null; then
+  echo "etcd is not running. Start it with: mise run etcd-start"
+  exit 1
+fi
+
+# Clear existing data
+echo "Clearing existing etcd data..."
+etcdctl del --prefix /
+
+# Add known test data
+echo "Adding known test data..."
+etcdctl put /restore-test/timestamp "$(date)"
+etcdctl put /restore-test/data1 "original-value-1"
+etcdctl put /restore-test/data2 "original-value-2"
+etcdctl put /app/restore-config "restore-test-config"
+
+# Show current data
+echo "Current etcd data:"
+etcdctl get --prefix /
+
+# Create snapshot
+echo "Creating test restore snapshot..."
+go run . snapshot \
+  --etcd-endpoints "${ETCD_CLIENT_URL}" \
+  --etcd-snapshot-dir "${SNAPSHOTS_DIR}" \
+  --aws-bucket "${MINIO_BUCKET}" \
+  --aws-region "us-east-1" \
+  --aws-endpoint-url "${MINIO_API_URL}" \
+  --aws-access-key-id "${MINIO_ROOT_USER}" \
+  --aws-secret-access-key "${MINIO_ROOT_PASSWORD}" \
+  --name "${TEST_SNAPSHOT_NAME}"
+
+echo "Test restore snapshot created: ${SNAPSHOTS_DIR}/${TEST_SNAPSHOT_NAME}.db"
+
+# Add different data after snapshot to verify restore works
+echo "Adding post-snapshot data to verify restore..."
+etcdctl put /post-snapshot/key "this-should-disappear-after-restore"
+etcdctl put /restore-test/data1 "modified-value-1"
+
+echo "Post-snapshot etcd data:"
+etcdctl get --prefix /
+"""
+
+[tasks.test-restore-workflow]
+description = "Complete restore testing workflow"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+echo "=== Complete Restore Testing Workflow ==="
+
+# Ensure services are running
+if ! curl -s "${ETCD_CLIENT_URL}/health"; then
+  echo "Starting etcd..."
+  mise run etcd-start &
+  sleep 5
+fi
+
+if ! curl -s "${MINIO_API_URL}/minio/health/ready"; then
+  echo "Starting MinIO..."
+  mise run minio-start &
+  sleep 5
+fi
+
+# Setup MinIO
+mise run test-setup
+
+echo "1. Creating test restore snapshot with known data..."
+mise run test-create-restore-snapshot
+
+echo -e "\n2. Testing local restore..."
+mise run test-restore-local
+
+echo -e "\n3. Testing S3 restore..."
+mise run test-restore-s3
+
+echo -e "\n4. Stop services..."
+mise run dev-stop
+
+echo -e "\n=== Restore Testing Complete ==="
+"""

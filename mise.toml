@@ -1,0 +1,17 @@
+[settings]
+go_set_goroot = true
+
+[tools]
+## https://go.dev/doc/devel/release
+go = '1.24.2'
+## https://github.com/goreleaser/goreleaser/releases
+"goreleaser" = '2'
+## https://github.com/golangci/golangci-lint/releases
+"golangci-lint" = '2'
+
+## https://github.com/etcd-io/etcd/releases
+"etcd" = '3'
+
+## Direct download from MinIO official URL
+"ubi:https://dl.min.io/server/minio/release/linux-amd64/minio" = 'latest'
+"ubi:https://dl.min.io/client/mc/release/linux-amd64/mc" = 'latest'
