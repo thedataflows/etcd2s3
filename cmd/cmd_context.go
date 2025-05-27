@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/thedataflows/etcd2s3/pkg/appconfig"
@@ -27,6 +28,10 @@ func NewCLIContext(version string, config *appconfig.AppConfig) *CLIContext {
 
 // GetS3Client returns a cached S3 client or creates a new one
 func (ctx *CLIContext) GetS3Client() (*s3.Client, error) {
+	if ctx.Config.S3.Bucket == "" {
+		return nil, fmt.Errorf("S3 bucket name is required")
+	}
+
 	ctx.s3Mutex.Lock()
 	defer ctx.s3Mutex.Unlock()
 
