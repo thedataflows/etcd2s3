@@ -313,17 +313,14 @@ go build .
 
 **Development workflow:**
 
-This repo uses [mise-en-place](https://github.com/jdx/mise)
+This repo uses [mise-en-place](https://github.com/jdx/mise). `mise.toml`
+pins the toolchain (Go, goreleaser, golangci-lint, etcd, rustfs, s5cmd) and
+holds the shared local config in `[env]`, so the app runs without repeated
+flags.
 
 ```bash
-# Set environment using mise
-mise up
-
-# Run in development mode
-LOG_LEVEL=debug go run . snapshot \
-  --etcd-endpoints http://localhost:2379 \
-  --etcd-snapshot-dir ./testdata/snapshots \
-  --aws-bucket etcd-snapshots-test
+# Install the pinned tools
+mise install
 
 # Build binary
 go build -o etcd2s3 .
@@ -332,9 +329,35 @@ go build -o etcd2s3 .
 go test ./...
 ```
 
+**Local testing against etcd and rustfs:**
+
+Use the mise tasks — they start the services, create the S3 bucket, and run
+the app with the shared `[env]` config. See
+[testdata/README.md](testdata/README.md) for the full task list.
+
+```bash
+# Start etcd and rustfs (foreground; Ctrl-C or `mise run dev-stop` to stop)
+mise run dev-start
+
+# Create the snapshot bucket on rustfs
+mise run test-setup
+
+# Add test data to etcd
+mise run test-populate-etcd
+
+# Snapshot and upload to S3
+mise run test-snapshot
+
+# List local and S3 snapshots
+mise run test-list
+
+# Stop both services
+mise run dev-stop
+```
+
 **Dependencies:**
 
-- Go 1.24+
+- Go 1.27+ (managed by mise)
 - Uses s5cmd library internally (no external installation required)
 - Compatible with etcd v3.6+
 
@@ -445,7 +468,21 @@ docker exec etcd-dev etcdctl get /test/ --prefix
 
 ## Testing
 
-See [testdata/README.md](testdata/README.md) for example test workflows and commands.
+Local integration testing runs against etcd and rustfs started by mise
+tasks:
+
+```bash
+mise run dev-start          # start etcd + rustfs
+mise run test-setup         # create the S3 bucket
+mise run test-snapshot      # snapshot + upload
+mise run test-list          # list local + S3 snapshots
+mise run test-restore local # restore from local snapshot
+mise run test-restore s3    # restore from S3 snapshot
+mise run dev-stop           # stop services
+```
+
+See [testdata/README.md](testdata/README.md) for all tasks and example
+workflows. For a container-based stack, use Docker Compose instead (below).
 
 ## License
 
