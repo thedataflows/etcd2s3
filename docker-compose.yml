@@ -24,35 +24,40 @@ services:
       retries: 3
       start_period: 10s
 
-  minio:
-    image: quay.io/minio/minio:latest
-    container_name: minio-dev
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: rustfs-dev
     ports:
       - "9000:9000"
       - "9001:9001"
-    environment: &minio_env
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-    command: server /data --console-address ":9001"
+    environment:
+      - RUSTFS_ACCESS_KEY=rustfsadmin
+      - RUSTFS_SECRET_KEY=rustfsadmin
+      - RUSTFS_ADDRESS=:9000
+      - RUSTFS_CONSOLE_ADDRESS=:9001
+      - RUSTFS_CONSOLE_ENABLE=true
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
-  minio-init:
-    image: quay.io/minio/mc:latest
-    container_name: minio-init-dev
+  # Creates the snapshot bucket once. s5cmd is the same S3 engine etcd2s3 uses.
+  rustfs-init:
+    image: peakcom/s5cmd:v2.3.0
+    container_name: rustfs-init-dev
     depends_on:
-      minio:
+      rustfs:
         condition: service_healthy
-    environment: *minio_env
-    volumes:
-      - ./docker-init-minio.sh:/docker-init-minio.sh:ro
-    entrypoint: ["/bin/sh", "/docker-init-minio.sh"]
+    environment:
+      - AWS_ACCESS_KEY_ID=rustfsadmin
+      - AWS_SECRET_ACCESS_KEY=rustfsadmin
+      - AWS_EC2_METADATA_DISABLED=true
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/s5cmd --endpoint-url http://rustfs:9000 ls s3://etcd-snapshots >/dev/null 2>&1 || /s5cmd --endpoint-url http://rustfs:9000 mb s3://etcd-snapshots"]
     restart: "no"
 
   etcd2s3:
@@ -61,7 +66,7 @@ services:
     depends_on:
       etcd:
         condition: service_healthy
-      minio-init:
+      rustfs-init:
         condition: service_completed_successfully
     volumes:
       - snapshots:/data/snapshots
@@ -71,13 +76,13 @@ services:
       - ETCD_SNAPSHOT_DIR=/data/snapshots
       - AWS_BUCKET=etcd-snapshots
       - AWS_REGION=us-east-1
-      - AWS_ENDPOINT_URL=http://minio:9000
-      - AWS_ACCESS_KEY_ID=minioadmin
-      - AWS_SECRET_ACCESS_KEY=minioadmin
+      - AWS_ENDPOINT_URL=http://rustfs:9000
+      - AWS_ACCESS_KEY_ID=rustfsadmin
+      - AWS_SECRET_ACCESS_KEY=rustfsadmin
     entrypoint: ["etcd2s3"]
     command: ["snapshot"]
 
 volumes:
   etcd-data:
-  minio-data:
+  rustfs-data:
   snapshots:

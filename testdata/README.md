@@ -7,33 +7,34 @@ Make sure [mise-en-place](https://github.com/jdx/mise) is available in PATH.
 ## Directory Structure
 
 - `etcd/` - Local etcd data directory
-- `minio/` - Local MinIO data directory
+- `rustfs/` - Local rustfs (S3) data directory
 - `snapshots/` - Local snapshot storage directory
 
 ## Configuration
 
-The test environment is configured via CLI flags and environment variables:
+Shared config lives in `[env]` in `mise.toml`. The app reads the same
+variables through its own flags, so `go run .` tasks need no flags:
 
-- Connect to local etcd at `localhost:2379`
+- Connect to local etcd at `http://localhost:2379`
 - Store snapshots in `./testdata/snapshots`
-- Upload to local MinIO bucket `etcd-snapshots-test`
-- Use minimal retention policy for testing
+- Upload to local rustfs bucket `etcd-snapshots`
+- S3 endpoint `http://localhost:9000`, credentials `rustfsadmin`/`rustfsadmin`
 
 ## Service Endpoints
 
 - **etcd**: <http://localhost:2379>
-- **MinIO API**: <http://localhost:9000>
-- **MinIO Console**: <http://localhost:9001>
-  - Username: `minioadmin`
-  - Password: `minioadmin`
+- **rustfs S3 API**: <http://localhost:9000> (health: `/health`)
+- **rustfs Console**: <http://localhost:9001>
+  - Username: `rustfsadmin`
+  - Password: `rustfsadmin`
 
 ## Quick Start
 
 ```bash
-# Start both etcd and MinIO:
+# Start both etcd and rustfs:
 mise run dev-start
 
-# Setup MinIO bucket:
+# Setup the rustfs bucket:
 mise run test-setup
 
 # Create a test snapshot:
@@ -51,8 +52,8 @@ mise run dev-stop
 # Start etcd only
 mise run etcd-start
 
-# Start MinIO only
-mise run minio-start
+# Start rustfs only
+mise run rustfs-start
 
 # Start both services
 mise run dev-start
@@ -64,7 +65,7 @@ mise run dev-stop
 ### Testing Tasks
 
 ```bash
-# Setup MinIO bucket
+# Setup rustfs bucket
 mise run test-setup
 
 # Populate etcd with test data
@@ -78,6 +79,11 @@ mise run test-list
 
 # Run complete test workflow
 mise run test-full-workflow
+
+# Restore tests (local file or from S3)
+mise run test-restore local
+mise run test-restore s3
+mise run test-restore-workflow
 ```
 
 ### Monitoring & Maintenance
@@ -86,11 +92,11 @@ mise run test-full-workflow
 # Check status of all services
 mise run dev-status
 
-# Show etcd logs
+# Show etcd status
 mise run logs-etcd
 
-# Show MinIO logs
-mise run logs-minio
+# Show rustfs status
+mise run logs-rustfs
 
 # Clean all test data
 mise run dev-clean
@@ -102,7 +108,7 @@ mise run dev-clean
 # 1. Start services
 mise run dev-start
 
-# 2. Setup MinIO bucket
+# 2. Setup rustfs bucket
 mise run test-setup
 
 # 3. Add test data to etcd
@@ -130,12 +136,12 @@ If services aren't working:
 # Check if etcd is running
 curl http://localhost:2379/health
 
-# Check if MinIO is running
-curl http://localhost:9000/minio/health/ready
+# Check if rustfs is running
+curl http://localhost:9000/health
 
-# View logs for debugging
+# View status for debugging
 mise run logs-etcd
-mise run logs-minio
+mise run logs-rustfs
 
 # Restart services
 mise run dev-stop
@@ -150,7 +156,7 @@ mise run test-setup
 ## Notes
 
 - All data is stored in `./testdata/` directory
-- MinIO console is available at <http://localhost:9001>
+- rustfs console is available at <http://localhost:9001>
 - etcd data persists between restarts
 - Use `dev-clean` to reset all test data
 - Snapshots are created with minimal retention for testing

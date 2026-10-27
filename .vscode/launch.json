@@ -10,18 +10,15 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}",
-      "args": [
-        "list",
-        "--etcd-endpoints", "http://localhost:2379",
-        // "--etcd-snapshot-dir", "./testdata/snapshots",
-        "--aws-bucket", "etcd-snapshots-test",
-        "--aws-endpoint-url", "http://localhost:9000",
-        "--aws-access-key-id", "minioadmin",
-        "--aws-secret-access-key", "minioadmin"
-      ],
       "env": {
-        "ETCD_SNAPSHOT_DIR":"./testadata/snapshots"
+        "ETCD_ENDPOINTS": "http://localhost:2379",
+        "ETCD_SNAPSHOT_DIR": "./testdata/snapshots",
+        "AWS_BUCKET": "etcd-snapshots",
+        "AWS_ENDPOINT_URL": "http://localhost:9000",
+        "AWS_ACCESS_KEY_ID": "rustfsadmin",
+        "AWS_SECRET_ACCESS_KEY": "rustfsadmin"
       },
+      "args": ["list"]
     }
   ]
 }

@@ -353,7 +353,7 @@ docker build -t etcd2s3 .
 docker run --rm \
   -e ETCD_ENDPOINTS=http://etcd:2379 \
   -e ETCD_SNAPSHOT_DIR=/data/snapshots \
-  -e S3_BUCKET=my-etcd-snapshots \
+  -e AWS_BUCKET=my-etcd-snapshots \
   etcd2s3 snapshot
 
 # Run interactively
@@ -369,30 +369,23 @@ docker run --rm ghcr.io/thedataflows/etcd2s3:latest version
 
 **Development with Docker Compose:**
 
+The compose stack starts etcd, RustFS (S3-compatible object storage), a
+one-shot bucket init, and etcd2s3. All etcd2s3 configuration is set through
+its environment in `docker-compose.yml`.
+
 ```bash
-# Start etcd, MinIO, and etcd2s3 services
+# Start etcd, rustfs, and etcd2s3 services
 docker compose up -d
 
-# Wait for services to be healthy, then run etcd2s3 commands
-docker exec etcd2s3-dev /usr/local/bin/etcd2s3 snapshot \
-  --etcd-endpoints http://etcd:2379 \
-  --etcd-snapshot-dir /data/snapshots \
-  --aws-bucket etcd-snapshots \
-  --aws-endpoint-url http://minio:9000 \
-  --aws-access-key-id minioadmin \
-  --aws-secret-access-key minioadmin
+# Create and upload a snapshot
+docker compose run --rm etcd2s3 snapshot
 
 # List snapshots
-docker exec etcd2s3-dev /usr/local/bin/etcd2s3 list \
-  --etcd-snapshot-dir /data/snapshots \
-  --aws-bucket etcd-snapshots \
-  --aws-endpoint-url http://minio:9000 \
-  --aws-access-key-id minioadmin \
-  --aws-secret-access-key minioadmin
+docker compose run --rm etcd2s3 list
 
-# Restore from snapshot (requires stopping etcd first)
+# Restore from a snapshot (requires stopping etcd first)
 docker compose stop etcd
-docker exec etcd2s3-dev /usr/local/bin/etcd2s3 restore <snapshot-name> \
+docker compose run --rm etcd2s3 restore <snapshot-name> \
   --data-dir /var/lib/etcd \
   --name etcd-dev \
   --initial-cluster "etcd-dev=http://etcd:2380" \
@@ -411,34 +404,20 @@ docker exec etcd-dev etcdctl put /test/key1 "value1"
 docker exec etcd-dev etcdctl put /test/key2 "value2"
 
 # 3. Create and upload snapshot
-docker exec etcd2s3-dev /usr/local/bin/etcd2s3 snapshot \
-  --etcd-endpoints http://etcd:2379 \
-  --etcd-snapshot-dir /data/snapshots \
-  --aws-bucket etcd-snapshots \
-  --aws-endpoint-url http://minio:9000 \
-  --aws-access-key-id minioadmin \
-  --aws-secret-access-key minioadmin
+docker compose run --rm etcd2s3 snapshot
 
-# 4. Verify snapshot was uploaded to MinIO S3
-docker exec minio-dev mc ls local/etcd-snapshots/
+# 4. Verify snapshot was uploaded to rustfs S3
+docker run --rm --network etcd2s3_default \
+  -e AWS_ACCESS_KEY_ID=rustfsadmin -e AWS_SECRET_ACCESS_KEY=rustfsadmin \
+  -e AWS_EC2_METADATA_DISABLED=true \
+  peakcom/s5cmd:v2.3.0 --endpoint-url http://rustfs:9000 ls s3://etcd-snapshots/
 
 # 5. Add more data and create another snapshot
 docker exec etcd-dev etcdctl put /test/key3 "value3"
-docker exec etcd2s3-dev /usr/local/bin/etcd2s3 snapshot \
-  --etcd-endpoints http://etcd:2379 \
-  --etcd-snapshot-dir /data/snapshots \
-  --aws-bucket etcd-snapshots \
-  --aws-endpoint-url http://minio:9000 \
-  --aws-access-key-id minioadmin \
-  --aws-secret-access-key minioadmin
+docker compose run --rm etcd2s3 snapshot
 
 # 6. List all available snapshots
-docker exec etcd2s3-dev /usr/local/bin/etcd2s3 list \
-  --etcd-snapshot-dir /data/snapshots \
-  --aws-bucket etcd-snapshots \
-  --aws-endpoint-url http://minio:9000 \
-  --aws-access-key-id minioadmin \
-  --aws-secret-access-key minioadmin
+docker compose run --rm etcd2s3 list
 
 # 7. Simulate data loss and restore
 docker exec etcd-dev etcdctl del /test/key3
@@ -446,15 +425,11 @@ docker compose stop etcd
 
 # 8. Restore from the second snapshot (contains key3)
 # Note: In production, you would use proper etcd cluster restore procedures
-docker exec etcd2s3-dev /usr/local/bin/etcd2s3 restore etcd-snapshot-YYYYMMDD-HHMMSS.db \
+docker compose run --rm etcd2s3 restore etcd-snapshot-YYYYMMDD-HHMMSS.db \
   --data-dir /var/lib/etcd \
   --name etcd-dev \
   --initial-cluster "etcd-dev=http://etcd:2380" \
-  --initial-advertise-peer-urls "http://etcd:2380" \
-  --aws-bucket etcd-snapshots \
-  --aws-endpoint-url http://minio:9000 \
-  --aws-access-key-id minioadmin \
-  --aws-secret-access-key minioadmin
+  --initial-advertise-peer-urls "http://etcd:2380"
 
 # 9. Copy restored data to etcd volume (development setup)
 docker cp etcd2s3-dev:/var/lib/etcd ./restored-etcd-data

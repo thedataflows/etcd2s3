@@ -11,3 +11,18 @@ go = '1.27'
 
 ## https://github.com/rustfs/rustfs/releases
 "rustfs" = "1"
+
+## https://github.com/peak/s5cmd/releases — S3 client for local test setup,
+## same engine etcd2s3 itself uses (pkg/s3)
+"s5cmd" = '2'
+
+## Shared config for local dev/test tasks (mise-tasks/) — read directly by
+## etcd2s3 (kong DefaultEnvars) and s5cmd. Mirrors docker-compose.yml.
+[env]
+ETCD_ENDPOINTS = 'http://localhost:2379'
+ETCD_SNAPSHOT_DIR = './testdata/snapshots'
+AWS_BUCKET = 'etcd-snapshots'
+AWS_REGION = 'us-east-1'
+AWS_ENDPOINT_URL = 'http://localhost:9000'
+AWS_ACCESS_KEY_ID = 'rustfsadmin'
+AWS_SECRET_ACCESS_KEY = 'rustfsadmin'

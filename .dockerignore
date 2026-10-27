@@ -12,7 +12,7 @@ README.md
 
 # Development data
 /testdata/etcd*
-/testdata/minio
+/testdata/rustfs
 /testdata/snapshots
 
 # IDE

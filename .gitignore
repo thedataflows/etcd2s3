@@ -3,7 +3,7 @@
 /etcd2s3*
 /dist/
 /testdata/etcd*
-/testdata/minio
+/testdata/rustfs
 /testdata/snapshots
 .env
 .env.local
