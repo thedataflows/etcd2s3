@@ -1,42 +1,21 @@
 # Build stage
-FROM goreleaser/goreleaser:v2.9.0 AS builder
-
-# Set working directory
+FROM golang:1.27.3 AS builder
 WORKDIR /app
-
-# Copy source code and goreleaser config
 COPY . .
-
-# Build the application using goreleaser
-# Use --snapshot for local builds without git tags
-# Filter for linux/amd64 only to speed up Docker build
 ARG VERSION=v0.0.0-snapshot
-ENV GORELEASER_CURRENT_TAG=$VERSION
-RUN goreleaser build --snapshot --clean --single-target
+RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+    -ldflags="-s -w -X=main.version=${VERSION}" \
+    -o /out/etcd2s3 .
 
 # Final stage
-FROM alpine:3.21
-
-# Install ca-certificates for HTTPS requests
-RUN apk add --no-cache ca-certificates
-
-# Create non-root user
-RUN addgroup -g 1000 etcd2s3 && \
-    adduser -D -s /bin/sh -u 1000 -G etcd2s3 etcd2s3
-
-# Create directories for data and snapshots
-RUN mkdir -p /data /data/snapshots && \
+FROM alpine:3.24
+RUN apk add --no-cache ca-certificates && \
+    addgroup -g 1000 etcd2s3 && \
+    adduser -D -u 1000 -G etcd2s3 etcd2s3 && \
+    mkdir -p /data/snapshots && \
     chown -R etcd2s3:etcd2s3 /data
-
-# Copy binary from builder stage
-COPY --from=builder /app/dist/default_linux_amd64_v1/etcd2s3 /usr/local/bin/etcd2s3
-
-# Set user
+COPY --from=builder /out/etcd2s3 /usr/local/bin/etcd2s3
 USER etcd2s3
-
-# Set working directory
 WORKDIR /data
-
-# Default command
 ENTRYPOINT ["etcd2s3"]
 CMD ["--help"]

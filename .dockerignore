@@ -7,6 +7,9 @@ README.md
 /dist/
 /etcd2s3*
 
+# Git history (not needed for build)
+/.git/
+
 # Development data
 /testdata/etcd*
 /testdata/minio
