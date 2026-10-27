@@ -2,16 +2,22 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"slices"
+	"time"
 
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/thedataflows/etcd2s3/pkg/appconfig"
-	log "github.com/thedataflows/go-lib-log"
 )
 
-const PKG_CMD = "cmd"
+const (
+	PKG_CMD = "cmd"
+	KEY_PKG = "pkg"
+)
 
 // CLI represents the main CLI structure
 type CLI struct {
@@ -33,12 +39,22 @@ func (cli *CLI) AfterApply(ctx *kong.Context) error {
 	}
 
 	// Set log level and format
-	if err := log.SetLoggerLogLevel(cli.LogLevel); err != nil {
+	level, err := zerolog.ParseLevel(cli.LogLevel)
+	if err != nil {
 		return fmt.Errorf("failed to set log level: %w", err)
 	}
+	zerolog.SetGlobalLevel(level)
 
-	if err := log.SetLoggerLogFormat(cli.LogFormat); err != nil {
-		return fmt.Errorf("failed to set log format: %w", err)
+	switch cli.LogFormat {
+	case "", "console":
+		log.Logger = zerolog.New(zerolog.ConsoleWriter{
+			Out:        os.Stderr,
+			TimeFormat: time.RFC3339,
+		}).With().Timestamp().Logger()
+	case "json":
+		log.Logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
+	default:
+		return fmt.Errorf("failed to set log format: invalid log format '%s'. Supported formats: [console json]", cli.LogFormat)
 	}
 
 	return nil
@@ -86,7 +102,7 @@ func Run(version string, args []string) error {
 	// Create CLI context with shared config and S3 factory
 	cliCtx := NewCLIContext(version, &cli.Config)
 
-	log.Logger.Info().Str(log.KEY_PKG, PKG_CMD).Str("app", ctx.Model.Name).Str("version", version).Msg("Starting application")
+	log.Info().Str(KEY_PKG, PKG_CMD).Str("app", ctx.Model.Name).Str("version", version).Msg("Starting application")
 
 	return ctx.Run(cliCtx)
 }

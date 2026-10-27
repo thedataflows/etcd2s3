@@ -3,8 +3,8 @@ package cmd
 import (
 	"context"
 
+	log "github.com/rs/zerolog/log"
 	"github.com/thedataflows/etcd2s3/pkg/retention"
-	log "github.com/thedataflows/go-lib-log"
 )
 
 // CleanupCmd deletes snapshots based on retention policies
@@ -17,9 +17,9 @@ type CleanupCmd struct {
 
 func (c *CleanupCmd) Run(ctx *CLIContext) error {
 	if c.DryRun {
-		log.Info(PKG_CMD, "Starting cleanup operation (DRY RUN)")
+		log.Info().Str(KEY_PKG, PKG_CMD).Msg("Starting cleanup operation (DRY RUN)")
 	} else {
-		log.Info(PKG_CMD, "Starting cleanup operation")
+		log.Info().Str(KEY_PKG, PKG_CMD).Msg("Starting cleanup operation")
 	}
 
 	retentionManager := retention.NewManager(ctx.Config.Policy)
@@ -34,52 +34,52 @@ func (c *CleanupCmd) Run(ctx *CLIContext) error {
 }
 
 func (c *CleanupCmd) runUnifiedCleanup(ctx *CLIContext, retentionManager *retention.Manager) error {
-	log.Info(PKG_CMD, "Using unified retention evaluation")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Using unified retention evaluation")
 
 	// Create S3 client if needed using factory
 	s3Client := ctx.GetS3ClientOrNil()
 	if s3Client == nil {
-		log.Warn(PKG_CMD, "S3 client unavailable, will only clean local snapshots")
+		log.Warn().Str(KEY_PKG, PKG_CMD).Msg("S3 client unavailable, will only clean local snapshots")
 	}
 
 	// Apply unified retention policy
 	if err := retentionManager.ApplyUnified(context.Background(), ctx.Config.Etcd.SnapshotDir, s3Client, c.DryRun); err != nil {
-		log.Errorf(PKG_CMD, err, "Failed to apply unified retention policy")
+		log.Error().Str(KEY_PKG, PKG_CMD).Err(err).Msgf("Failed to apply unified retention policy")
 		return err
 	}
 
-	log.Info(PKG_CMD, "Unified cleanup operation completed")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Unified cleanup operation completed")
 	return nil
 }
 
 func (c *CleanupCmd) runSeparateCleanup(ctx *CLIContext, retentionManager *retention.Manager) error {
-	log.Info(PKG_CMD, "Using separate retention evaluation for each storage type")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Using separate retention evaluation for each storage type")
 
 	// Clean local snapshots
 	if !c.Remote {
-		log.Info(PKG_CMD, "Cleaning local snapshots")
+		log.Info().Str(KEY_PKG, PKG_CMD).Msg("Cleaning local snapshots")
 		if err := retentionManager.ApplyLocal(ctx.Config.Etcd.SnapshotDir, c.DryRun); err != nil {
-			log.Errorf(PKG_CMD, err, "Failed to clean local snapshots")
+			log.Error().Str(KEY_PKG, PKG_CMD).Err(err).Msgf("Failed to clean local snapshots")
 		} else {
-			log.Info(PKG_CMD, "Local snapshot cleanup completed")
+			log.Info().Str(KEY_PKG, PKG_CMD).Msg("Local snapshot cleanup completed")
 		}
 	}
 
 	// Clean S3 snapshots
 	if !c.Local {
-		log.Info(PKG_CMD, "Cleaning S3 snapshots")
+		log.Info().Str(KEY_PKG, PKG_CMD).Msg("Cleaning S3 snapshots")
 		s3Client, err := ctx.GetS3Client()
 		if err != nil {
-			log.Errorf(PKG_CMD, err, "Failed to create S3 client")
+			log.Error().Str(KEY_PKG, PKG_CMD).Err(err).Msgf("Failed to create S3 client")
 		} else {
 			if err := retentionManager.ApplyS3(context.Background(), s3Client, c.DryRun); err != nil {
-				log.Errorf(PKG_CMD, err, "Failed to clean S3 snapshots")
+				log.Error().Str(KEY_PKG, PKG_CMD).Err(err).Msgf("Failed to clean S3 snapshots")
 			} else {
-				log.Info(PKG_CMD, "S3 snapshot cleanup completed")
+				log.Info().Str(KEY_PKG, PKG_CMD).Msg("S3 snapshot cleanup completed")
 			}
 		}
 	}
 
-	log.Info(PKG_CMD, "Cleanup operation completed")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Cleanup operation completed")
 	return nil
 }

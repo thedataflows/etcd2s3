@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/rs/zerolog/log"
 	"github.com/thedataflows/etcd2s3/pkg/compression"
 	"github.com/thedataflows/etcd2s3/pkg/etcd"
 	"github.com/thedataflows/etcd2s3/pkg/retention"
-	log "github.com/thedataflows/go-lib-log"
 )
 
 // SnapshotCmd takes a snapshot of etcd and uploads to S3
@@ -24,7 +24,7 @@ type SnapshotCmd struct {
 }
 
 func (s *SnapshotCmd) Run(ctx *CLIContext) error {
-	log.Info(PKG_CMD, "Starting snapshot operation")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Starting snapshot operation")
 
 	// Create etcd client
 	etcdClient, err := etcd.NewClient(ctx.Config.Etcd)
@@ -53,7 +53,7 @@ func (s *SnapshotCmd) Run(ctx *CLIContext) error {
 		return fmt.Errorf("failed to take etcd snapshot: %w", err)
 	}
 
-	log.Logger.Info().Str(log.KEY_PKG, PKG_CMD).Str("file", snapshotPath).Msg("Snapshot saved")
+	log.Info().Str(KEY_PKG, PKG_CMD).Str("file", snapshotPath).Msg("Snapshot saved")
 
 	// Apply compression if specified
 	finalSnapshotPath := snapshotPath
@@ -66,11 +66,11 @@ func (s *SnapshotCmd) Run(ctx *CLIContext) error {
 			return fmt.Errorf("failed to compress snapshot: %w", err)
 		}
 
-		log.Logger.Info().Str(log.KEY_PKG, PKG_CMD).Str("algorithm", s.Compression).Str("file", compressedPath).Str("duration", fmt.Sprintf("%s", time.Since(compressionStart))).Msg("Snapshot compressed")
+		log.Info().Str(KEY_PKG, PKG_CMD).Str("algorithm", s.Compression).Str("file", compressedPath).Str("duration", fmt.Sprintf("%s", time.Since(compressionStart))).Msg("Snapshot compressed")
 
 		// Remove original uncompressed file
 		if err := etcdClient.RemoveSnapshot(snapshotPath); err != nil {
-			log.Logger.Error().Err(err).Str(log.KEY_PKG, PKG_CMD).Str("file", snapshotPath).Msg("Failed to remove original snapshot")
+			log.Error().Err(err).Str(KEY_PKG, PKG_CMD).Str("file", snapshotPath).Msg("Failed to remove original snapshot")
 		}
 
 		finalSnapshotPath = compressedPath
@@ -92,19 +92,19 @@ func (s *SnapshotCmd) Run(ctx *CLIContext) error {
 			return fmt.Errorf("failed to upload snapshot to S3: %w", err)
 		}
 
-		log.Infof(PKG_CMD, "Snapshot uploaded to S3: s3://%s/%s", ctx.Config.S3.Bucket, s3Key)
+		log.Info().Str(KEY_PKG, PKG_CMD).Msgf("Snapshot uploaded to S3: s3://%s/%s", ctx.Config.S3.Bucket, s3Key)
 
 		// Upload any other local snapshots that should be kept but are missing from S3
 		if err := s.uploadMissingSnapshots(ctx); err != nil {
-			log.Warnf(PKG_CMD, "Failed to upload missing local snapshots: %v", err)
+			log.Warn().Str(KEY_PKG, PKG_CMD).Msgf("Failed to upload missing local snapshots: %v", err)
 		}
 
 		// Remove local file if requested
 		if s.RemoveLocal || ctx.Config.Policy.RemoveLocal {
 			if err := etcdClient.RemoveSnapshot(finalSnapshotPath); err != nil {
-				log.Warnf(PKG_CMD, "Failed to remove local snapshot %s: %v", finalSnapshotPath, err)
+				log.Warn().Str(KEY_PKG, PKG_CMD).Msgf("Failed to remove local snapshot %s: %v", finalSnapshotPath, err)
 			} else {
-				log.Infof(PKG_CMD, "Local snapshot removed: %s", finalSnapshotPath)
+				log.Info().Str(KEY_PKG, PKG_CMD).Msgf("Local snapshot removed: %s", finalSnapshotPath)
 			}
 		}
 	}
@@ -117,43 +117,43 @@ func (s *SnapshotCmd) Run(ctx *CLIContext) error {
 			// Use unified approach when both local and S3 are involved
 			s3Client := ctx.GetS3ClientOrNil()
 			if s3Client == nil {
-				log.Warn(PKG_CMD, "S3 client unavailable for unified retention, falling back to local-only")
+				log.Warn().Str(KEY_PKG, PKG_CMD).Msg("S3 client unavailable for unified retention, falling back to local-only")
 				// Fall back to local-only retention
 				if err := retentionManager.ApplyLocal(ctx.Config.Etcd.SnapshotDir, false); err != nil {
-					log.Warnf(PKG_CMD, "Failed to apply local retention policy: %v", err)
+					log.Warn().Str(KEY_PKG, PKG_CMD).Msgf("Failed to apply local retention policy: %v", err)
 				}
 			} else {
 				if err := retentionManager.ApplyUnified(context.Background(), ctx.Config.Etcd.SnapshotDir, s3Client, false); err != nil {
-					log.Warnf(PKG_CMD, "Failed to apply unified retention policy: %v", err)
+					log.Warn().Str(KEY_PKG, PKG_CMD).Msgf("Failed to apply unified retention policy: %v", err)
 				}
 			}
 		} else {
 			// Use separate approach for individual storage types
 			if err := retentionManager.ApplyLocal(ctx.Config.Etcd.SnapshotDir, false); err != nil {
-				log.Warnf(PKG_CMD, "Failed to apply local retention policy: %v", err)
+				log.Warn().Str(KEY_PKG, PKG_CMD).Msgf("Failed to apply local retention policy: %v", err)
 			}
 
 			if s.UploadToS3 {
 				s3Client := ctx.GetS3ClientOrNil()
 				if s3Client == nil {
-					log.Warn(PKG_CMD, "S3 client unavailable for S3 retention")
+					log.Warn().Str(KEY_PKG, PKG_CMD).Msg("S3 client unavailable for S3 retention")
 				} else {
 					if err := retentionManager.ApplyS3(context.Background(), s3Client, false); err != nil {
-						log.Warnf(PKG_CMD, "Failed to apply S3 retention policy: %v", err)
+						log.Warn().Str(KEY_PKG, PKG_CMD).Msgf("Failed to apply S3 retention policy: %v", err)
 					}
 				}
 			}
 		}
 	}
 
-	log.Info(PKG_CMD, "Snapshot operation completed successfully")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Snapshot operation completed successfully")
 	return nil
 }
 
 // uploadMissingSnapshots uploads local snapshots that should be kept according to retention policy
 // but are missing from S3
 func (s *SnapshotCmd) uploadMissingSnapshots(ctx *CLIContext) error {
-	log.Info(PKG_CMD, "Checking for local snapshots that need to be uploaded to S3")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Checking for local snapshots that need to be uploaded to S3")
 
 	// Get S3 client from context
 	s3Client, err := ctx.GetS3Client()
@@ -200,23 +200,23 @@ func (s *SnapshotCmd) uploadMissingSnapshots(ctx *CLIContext) error {
 	}
 
 	if len(toUpload) == 0 {
-		log.Info(PKG_CMD, "All local snapshots that should be kept are already present in S3")
+		log.Info().Str(KEY_PKG, PKG_CMD).Msg("All local snapshots that should be kept are already present in S3")
 		return nil
 	}
 
-	log.Infof(PKG_CMD, "Found %d local snapshots to upload to S3", len(toUpload))
+	log.Info().Str(KEY_PKG, PKG_CMD).Msgf("Found %d local snapshots to upload to S3", len(toUpload))
 
 	// Upload missing snapshots
 	for _, snapshot := range toUpload {
 		s3Key := snapshot.Name
 
-		log.Infof(PKG_CMD, "Uploading local snapshot to S3: %s", snapshot.Name)
+		log.Info().Str(KEY_PKG, PKG_CMD).Msgf("Uploading local snapshot to S3: %s", snapshot.Name)
 		if err := s3Client.Upload(context.Background(), snapshot.Path, s3Key); err != nil {
-			log.Warnf(PKG_CMD, "Failed to upload snapshot %s to S3: %v", snapshot.Name, err)
+			log.Warn().Str(KEY_PKG, PKG_CMD).Msgf("Failed to upload snapshot %s to S3: %v", snapshot.Name, err)
 			continue
 		}
 
-		log.Infof(PKG_CMD, "Successfully uploaded: s3://%s/%s", ctx.Config.S3.Bucket, s3Key)
+		log.Info().Str(KEY_PKG, PKG_CMD).Msgf("Successfully uploaded: s3://%s/%s", ctx.Config.S3.Bucket, s3Key)
 	}
 
 	return nil

@@ -10,13 +10,15 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/rs/zerolog/log"
 	"github.com/thedataflows/etcd2s3/pkg/appconfig"
 	"github.com/thedataflows/etcd2s3/pkg/compression"
 	"github.com/thedataflows/etcd2s3/pkg/s3"
-	log "github.com/thedataflows/go-lib-log"
 )
 
 const PKG_RETENTION = "retention"
+
+const KEY_PKG = "pkg"
 
 // Manager handles retention policies for snapshots
 type Manager struct {
@@ -41,7 +43,7 @@ func NewManager(policy appconfig.RetentionPolicy) *Manager {
 
 // ApplyLocal applies retention policies to local snapshots
 func (m *Manager) ApplyLocal(snapshotDir string, dryRun bool) error {
-	log.Info(PKG_RETENTION, "Applying local retention policies")
+	log.Info().Str(KEY_PKG, PKG_RETENTION).Msg("Applying local retention policies")
 
 	// Get all local snapshots
 	snapshots, err := m.GetLocalSnapshots(snapshotDir)
@@ -56,26 +58,26 @@ func (m *Manager) ApplyLocal(snapshotDir string, dryRun bool) error {
 	// Delete snapshots
 	for _, snapshot := range toDelete {
 		if dryRun {
-			log.Warnf(PKG_RETENTION, "[DRY RUN] Would delete local snapshot: %s", snapshot.Name)
+			log.Warn().Str(KEY_PKG, PKG_RETENTION).Msgf("[DRY RUN] Would delete local snapshot: %s", snapshot.Name)
 		} else {
-			log.Warnf(PKG_RETENTION, "Deleting local snapshot: %s", snapshot.Name)
+			log.Warn().Str(KEY_PKG, PKG_RETENTION).Msgf("Deleting local snapshot: %s", snapshot.Name)
 			if err := os.Remove(snapshot.Path); err != nil {
-				log.Errorf(PKG_RETENTION, err, "Failed to delete local snapshot '%s'", snapshot.Path)
+				log.Error().Str(KEY_PKG, PKG_RETENTION).Err(err).Msgf("Failed to delete local snapshot '%s'", snapshot.Path)
 			}
 		}
 	}
 
 	if dryRun {
-		log.Infof(PKG_RETENTION, "Local retention dry run complete: %d snapshots would be kept, %d would be deleted", len(toKeep), len(toDelete))
+		log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Local retention dry run complete: %d snapshots would be kept, %d would be deleted", len(toKeep), len(toDelete))
 	} else {
-		log.Infof(PKG_RETENTION, "Local retention complete: %d snapshots kept, %d deleted", len(toKeep), len(toDelete))
+		log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Local retention complete: %d snapshots kept, %d deleted", len(toKeep), len(toDelete))
 	}
 	return nil
 }
 
 // ApplyS3 applies retention policies to S3 snapshots
 func (m *Manager) ApplyS3(ctx context.Context, s3Client *s3.Client, dryRun bool) error {
-	log.Info(PKG_RETENTION, "Applying S3 retention policies")
+	log.Info().Str(KEY_PKG, PKG_RETENTION).Msg("Applying S3 retention policies")
 
 	// Get all S3 snapshots
 	snapshots, err := m.GetS3Snapshots(ctx, s3Client)
@@ -92,21 +94,21 @@ func (m *Manager) ApplyS3(ctx context.Context, s3Client *s3.Client, dryRun bool)
 	for _, snapshot := range toDelete {
 		keys = append(keys, snapshot.Path) // For S3, Path contains the key
 		if dryRun {
-			log.Warnf(PKG_RETENTION, "[DRY RUN] Would delete S3 snapshot: %s", snapshot.Name)
+			log.Warn().Str(KEY_PKG, PKG_RETENTION).Msgf("[DRY RUN] Would delete S3 snapshot: %s", snapshot.Name)
 		}
 	}
 
 	if len(keys) > 0 && !dryRun {
-		log.Warnf(PKG_RETENTION, "Deleting %d S3 snapshots", len(keys))
+		log.Warn().Str(KEY_PKG, PKG_RETENTION).Msgf("Deleting %d S3 snapshots", len(keys))
 		if err := s3Client.DeleteMultiple(ctx, keys); err != nil {
 			return fmt.Errorf("failed to delete S3 snapshots: %w", err)
 		}
 	}
 
 	if dryRun {
-		log.Infof(PKG_RETENTION, "S3 retention dry run complete: %d snapshots would be kept, %d would be deleted", len(toKeep), len(toDelete))
+		log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("S3 retention dry run complete: %d snapshots would be kept, %d would be deleted", len(toKeep), len(toDelete))
 	} else {
-		log.Infof(PKG_RETENTION, "S3 retention complete: %d snapshots kept, %d deleted", len(toKeep), len(toDelete))
+		log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("S3 retention complete: %d snapshots kept, %d deleted", len(toKeep), len(toDelete))
 	}
 	return nil
 }
@@ -196,8 +198,8 @@ func (m *Manager) determineSnapshotsToKeep(snapshots []SnapshotFile) map[string]
 	toKeep := make(map[string]bool)
 	now := time.Now()
 
-	log.Infof(PKG_RETENTION, "Evaluating retention for %d snapshots", len(snapshots))
-	log.Infof(PKG_RETENTION, "Retention policy: KeepLast=%d, KeepLastDays=%d, KeepLastHours=%d, KeepLastWeeks=%d, KeepLastMonths=%d, KeepLastYears=%d",
+	log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Evaluating retention for %d snapshots", len(snapshots))
+	log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Retention policy: KeepLast=%d, KeepLastDays=%d, KeepLastHours=%d, KeepLastWeeks=%d, KeepLastMonths=%d, KeepLastYears=%d",
 		m.policy.KeepLast, m.policy.KeepLastDays, m.policy.KeepLastHours, m.policy.KeepLastWeeks, m.policy.KeepLastMonths, m.policy.KeepLastYears)
 
 	// Sort snapshots by modification time (newest first)
@@ -230,7 +232,7 @@ func (m *Manager) determineSnapshotsToKeep(snapshots []SnapshotFile) map[string]
 	// If only one policy is active, use the single policy
 	useIntersection := activePolicies > 1
 
-	log.Infof(PKG_RETENTION, "Active policies: %d, using %s logic", activePolicies,
+	log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Active policies: %d, using %s logic", activePolicies,
 		func() string {
 			if useIntersection {
 				return "intersection (AND)"
@@ -249,7 +251,7 @@ func (m *Manager) determineSnapshotsToKeep(snapshots []SnapshotFile) map[string]
 
 	// Apply count-based retention (KeepLast)
 	if m.policy.KeepLast > 0 {
-		log.Infof(PKG_RETENTION, "Applying KeepLast policy: keeping %d newest snapshots", m.policy.KeepLast)
+		log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Applying KeepLast policy: keeping %d newest snapshots", m.policy.KeepLast)
 		for i, snapshot := range snapshots {
 			if i < m.policy.KeepLast {
 				if useIntersection {
@@ -257,7 +259,7 @@ func (m *Manager) determineSnapshotsToKeep(snapshots []SnapshotFile) map[string]
 				} else {
 					toKeep[snapshot.Name] = true
 				}
-				log.Debugf(PKG_RETENTION, "Snapshot %s: kept by KeepLast policy (rank %d)", snapshot.Name, i+1)
+				log.Debug().Str(KEY_PKG, PKG_RETENTION).Msgf("Snapshot %s: kept by KeepLast policy (rank %d)", snapshot.Name, i+1)
 			}
 		}
 	}
@@ -294,7 +296,7 @@ func (m *Manager) determineSnapshotsToKeep(snapshots []SnapshotFile) map[string]
 		}
 
 		if len(matchedPolicies) > 0 {
-			log.Debugf(PKG_RETENTION, "Snapshot %s (age: %v): matched time policies: %v",
+			log.Debug().Str(KEY_PKG, PKG_RETENTION).Msgf("Snapshot %s (age: %v): matched time policies: %v",
 				snapshot.Name, age.Truncate(time.Minute), matchedPolicies)
 		}
 
@@ -310,14 +312,14 @@ func (m *Manager) determineSnapshotsToKeep(snapshots []SnapshotFile) map[string]
 		for snapshotName, matches := range candidates {
 			if matches == activePolicies {
 				toKeep[snapshotName] = true
-				log.Debugf(PKG_RETENTION, "Snapshot %s: kept (satisfies all %d policies)", snapshotName, activePolicies)
+				log.Debug().Str(KEY_PKG, PKG_RETENTION).Msgf("Snapshot %s: kept (satisfies all %d policies)", snapshotName, activePolicies)
 			} else {
-				log.Debugf(PKG_RETENTION, "Snapshot %s: will be deleted (satisfies only %d/%d policies)", snapshotName, matches, activePolicies)
+				log.Debug().Str(KEY_PKG, PKG_RETENTION).Msgf("Snapshot %s: will be deleted (satisfies only %d/%d policies)", snapshotName, matches, activePolicies)
 			}
 		}
 	}
 
-	log.Infof(PKG_RETENTION, "Retention evaluation complete: %d snapshots to keep, %d to delete",
+	log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Retention evaluation complete: %d snapshots to keep, %d to delete",
 		len(toKeep), len(snapshots)-len(toKeep))
 
 	return toKeep
@@ -385,7 +387,7 @@ func (m *Manager) createUnifiedSnapshotList(localSnapshots, s3Snapshots []Snapsh
 // ApplyUnified applies retention policies considering both local and S3 snapshots together
 // This ensures consistent retention decisions across storage locations
 func (m *Manager) ApplyUnified(ctx context.Context, snapshotDir string, s3Client *s3.Client, dryRun bool) error {
-	log.Info(PKG_RETENTION, "Applying unified retention policies")
+	log.Info().Str(KEY_PKG, PKG_RETENTION).Msg("Applying unified retention policies")
 
 	// Get snapshots from both locations
 	localSnapshots, err := m.GetLocalSnapshots(snapshotDir)
@@ -414,10 +416,10 @@ func (m *Manager) ApplyUnified(ctx context.Context, snapshotDir string, s3Client
 	}
 
 	if dryRun {
-		log.Infof(PKG_RETENTION, "Unified retention dry run complete: Local (%d kept, %d deleted), S3 (%d kept, %d deleted)",
+		log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Unified retention dry run complete: Local (%d kept, %d deleted), S3 (%d kept, %d deleted)",
 			localKept, localDeleted, s3Kept, s3Deleted)
 	} else {
-		log.Infof(PKG_RETENTION, "Unified retention complete: Local (%d kept, %d deleted), S3 (%d kept, %d deleted)",
+		log.Info().Str(KEY_PKG, PKG_RETENTION).Msgf("Unified retention complete: Local (%d kept, %d deleted), S3 (%d kept, %d deleted)",
 			localKept, localDeleted, s3Kept, s3Deleted)
 	}
 
@@ -432,11 +434,11 @@ func (m *Manager) applyRetentionToLocal(snapshots []SnapshotFile, retentionDecis
 		} else {
 			deleted++
 			if dryRun {
-				log.Warnf(PKG_RETENTION, "[DRY RUN] Would delete local snapshot: %s", snapshot.Name)
+				log.Warn().Str(KEY_PKG, PKG_RETENTION).Msgf("[DRY RUN] Would delete local snapshot: %s", snapshot.Name)
 			} else {
-				log.Warnf(PKG_RETENTION, "Deleting local snapshot: %s", snapshot.Name)
+				log.Warn().Str(KEY_PKG, PKG_RETENTION).Msgf("Deleting local snapshot: %s", snapshot.Name)
 				if err := os.Remove(snapshot.Path); err != nil {
-					log.Errorf(PKG_RETENTION, err, "Failed to delete local snapshot '%s'", snapshot.Path)
+					log.Error().Str(KEY_PKG, PKG_RETENTION).Err(err).Msgf("Failed to delete local snapshot '%s'", snapshot.Path)
 				}
 			}
 		}
@@ -455,15 +457,15 @@ func (m *Manager) applyRetentionToS3(ctx context.Context, s3Client *s3.Client, s
 			deleted++
 			keysToDelete = append(keysToDelete, snapshot.Path)
 			if dryRun {
-				log.Warnf(PKG_RETENTION, "[DRY RUN] Would delete S3 snapshot: %s", snapshot.Name)
+				log.Warn().Str(KEY_PKG, PKG_RETENTION).Msgf("[DRY RUN] Would delete S3 snapshot: %s", snapshot.Name)
 			}
 		}
 	}
 
 	if len(keysToDelete) > 0 && !dryRun {
-		log.Warnf(PKG_RETENTION, "Deleting %d S3 snapshots", len(keysToDelete))
+		log.Warn().Str(KEY_PKG, PKG_RETENTION).Msgf("Deleting %d S3 snapshots", len(keysToDelete))
 		if err := s3Client.DeleteMultiple(ctx, keysToDelete); err != nil {
-			log.Errorf(PKG_RETENTION, err, "Failed to delete S3 snapshots")
+			log.Error().Str(KEY_PKG, PKG_RETENTION).Err(err).Msgf("Failed to delete S3 snapshots")
 		}
 	}
 

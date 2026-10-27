@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/rs/zerolog/log"
 	"github.com/thedataflows/etcd2s3/pkg/compression"
 	"github.com/thedataflows/etcd2s3/pkg/etcd"
-	log "github.com/thedataflows/go-lib-log"
 )
 
 // RestoreCmd restores etcd from a snapshot
@@ -24,7 +24,7 @@ type RestoreCmd struct {
 }
 
 func (r *RestoreCmd) Run(ctx *CLIContext) error {
-	log.Info(PKG_CMD, "Starting restore operation")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Starting restore operation")
 
 	var snapshotPath string
 	var err error
@@ -38,10 +38,10 @@ func (r *RestoreCmd) Run(ctx *CLIContext) error {
 		if found {
 			// Local file exists and has content (relative or absolute path)
 			snapshotPath = resolvedPath
-			log.Infof(PKG_CMD, "Using local snapshot: %s", snapshotPath)
+			log.Info().Str(KEY_PKG, PKG_CMD).Msgf("Using local snapshot: %s", snapshotPath)
 		} else {
 			// Local file missing/empty - attempt S3 download
-			log.Warnf(PKG_CMD, "Local file '%s' not found or empty, attempting to download", r.Source)
+			log.Warn().Str(KEY_PKG, PKG_CMD).Msgf("Local file '%s' not found or empty, attempting to download", r.Source)
 			snapshotPath, err = r.downloadFromS3Key(ctx, r.Source)
 		}
 	}
@@ -65,7 +65,7 @@ func (r *RestoreCmd) Run(ctx *CLIContext) error {
 		}
 
 		finalSnapshotPath = decompressedPath
-		log.Logger.Info().Str(log.KEY_PKG, PKG_CMD).Str("algorithm", compression.GetCompressionAlgorithmFromExt(snapshotPath)).Str("file", snapshotPath).Str("duration", fmt.Sprintf("%s", time.Since(compressionStart))).Msg("Snapshot decompressed")
+		log.Info().Str(KEY_PKG, PKG_CMD).Str("algorithm", compression.GetCompressionAlgorithmFromExt(snapshotPath)).Str("file", snapshotPath).Str("duration", fmt.Sprintf("%s", time.Since(compressionStart))).Msg("Snapshot decompressed")
 
 	}
 
@@ -83,7 +83,7 @@ func (r *RestoreCmd) Run(ctx *CLIContext) error {
 		return fmt.Errorf("failed to restore etcd: %w", err)
 	}
 
-	log.Infof(PKG_CMD, "Restore completed successfully to %s", r.DataDir)
+	log.Info().Str(KEY_PKG, PKG_CMD).Msgf("Restore completed successfully to %s", r.DataDir)
 	return nil
 }
 
@@ -130,7 +130,7 @@ func (r *RestoreCmd) downloadSnapshot(ctx *CLIContext, s3Key string) (string, er
 	}
 	displayURL := fmt.Sprintf("s3://%s/%s", ctx.Config.S3.Bucket, displayKey)
 
-	log.Logger.Info().Str(log.KEY_PKG, PKG_CMD).Str("endpoint", ctx.Config.S3.EndpointURL).Str("url", displayURL).Msg("Downloading snapshot")
+	log.Info().Str(KEY_PKG, PKG_CMD).Str("endpoint", ctx.Config.S3.EndpointURL).Str("url", displayURL).Msg("Downloading snapshot")
 
 	if err := s3Client.Download(context.Background(), actualKey, snapshotPath); err != nil {
 		// Clean up any partially created file on failure
@@ -144,6 +144,6 @@ func (r *RestoreCmd) downloadSnapshot(ctx *CLIContext, s3Key string) (string, er
 		return "", fmt.Errorf("downloaded snapshot file is empty or invalid")
 	}
 
-	log.Infof(PKG_CMD, "Snapshot downloaded to: %s", snapshotPath)
+	log.Info().Str(KEY_PKG, PKG_CMD).Msgf("Snapshot downloaded to: %s", snapshotPath)
 	return snapshotPath, nil
 }

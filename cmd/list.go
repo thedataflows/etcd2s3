@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+	log "github.com/rs/zerolog/log"
 	"github.com/thedataflows/etcd2s3/pkg/retention"
-	log "github.com/thedataflows/go-lib-log"
 )
 
 // ListCmd lists snapshots
@@ -32,7 +32,7 @@ type SnapshotInfo struct {
 }
 
 func (l *ListCmd) Run(ctx *CLIContext) error {
-	log.Info(PKG_CMD, "Listing snapshots")
+	log.Info().Str(KEY_PKG, PKG_CMD).Msg("Listing snapshots")
 
 	// Create retention manager
 	retentionMgr := retention.NewManager(ctx.Config.Policy)
@@ -50,13 +50,13 @@ func (l *ListCmd) runUnifiedList(ctx *CLIContext, retentionMgr *retention.Manage
 	// Get snapshots from both locations
 	localRetentionSnapshots, err := l.getLocalRetentionSnapshots(ctx.Config.Etcd.SnapshotDir)
 	if err != nil {
-		log.Logger.Error().Err(err).Str(log.KEY_PKG, PKG_CMD).Msg("Failed to get local snapshots")
+		log.Error().Err(err).Str(KEY_PKG, PKG_CMD).Msg("Failed to get local snapshots")
 		localRetentionSnapshots = nil
 	}
 
 	s3RetentionSnapshots, err := l.getS3RetentionSnapshots(ctx)
 	if err != nil {
-		log.Logger.Error().Err(err).Str(log.KEY_PKG, PKG_CMD).Str("url", ctx.Config.S3.EndpointURL).Str("bucket", ctx.Config.S3.Bucket).Msg("Failed to get S3 snapshots")
+		log.Error().Err(err).Str(KEY_PKG, PKG_CMD).Str("url", ctx.Config.S3.EndpointURL).Str("bucket", ctx.Config.S3.Bucket).Msg("Failed to get S3 snapshots")
 		s3RetentionSnapshots = nil
 	}
 
@@ -111,7 +111,7 @@ func (l *ListCmd) runSeparateList(ctx *CLIContext, retentionMgr *retention.Manag
 	if !l.Remote {
 		localSnapshots, err := l.listLocal(ctx.Config.Etcd.SnapshotDir, retentionMgr)
 		if err != nil {
-			log.Logger.Error().Err(err).Str(log.KEY_PKG, PKG_CMD).Msg("Failed to list local snapshots")
+			log.Error().Err(err).Str(KEY_PKG, PKG_CMD).Msg("Failed to list local snapshots")
 		} else {
 			snapshots = append(snapshots, localSnapshots...)
 		}
@@ -121,7 +121,7 @@ func (l *ListCmd) runSeparateList(ctx *CLIContext, retentionMgr *retention.Manag
 	if !l.Local {
 		s3Snapshots, err := l.listS3(ctx, retentionMgr)
 		if err != nil {
-			log.Logger.Error().Err(err).Str(log.KEY_PKG, PKG_CMD).Msg("Failed to list S3 snapshots")
+			log.Error().Err(err).Str(KEY_PKG, PKG_CMD).Msg("Failed to list S3 snapshots")
 		} else {
 			snapshots = append(snapshots, s3Snapshots...)
 		}
