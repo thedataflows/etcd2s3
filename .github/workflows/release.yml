@@ -20,6 +20,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
       - name: Build and publish release artifacts
         uses: goreleaser/goreleaser-action@v7
         with:
